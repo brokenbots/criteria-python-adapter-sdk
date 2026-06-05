@@ -1,60 +1,33 @@
-"""Criteria Adapter SDK for Python.
-
-This SDK enables you to write out-of-process adapter plugins for the Criteria
-workflow engine using Python, with Nuitka compilation for native binary
-distribution via OCI.
-
-## Quick Start
-
-```python
-import asyncio
-from criteria_adapter_sdk import serve
-
-async def main():
-    await serve({
-        "name": "my-adapter",
-        "version": "1.0.0",
-        "execute": lambda req, sender: sender.result("success", {}),
-    })
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
-"""
-
-from __future__ import annotations
-
-from criteria.v1 import adapter_plugin_pb2 as _pb
-
-from .plugin import (
-    AdapterService,
-    EventSender,
-    MAGIC_COOKIE_KEY,
-    MAGIC_COOKIE_VALUE,
-    PROTOCOL_VERSION,
-    SimpleAdapterConfig,
-    is_plugin_invocation,
-    serve,
-    serve_adapter,
-    start_server,
-    validate_and_exit_on_failure,
-    validate_handshake,
+from .library_mode import library_mode, run_in_process
+from .serve import serve, ServeConfig
+from .serve_remote import serve_remote, RemoteIdentity, ServeRemoteOptions, Service
+from .schema import pydantic_to_schema, dict_to_schema_proto
+from .helpers import (
+    Helpers,
+    LogSender,
+    OutcomeValidator,
+    PermissionCorrelator,
+    SecretsHelper,
+    SessionStore,
+    TimestampHelper,
 )
 
-SDK_VERSION = "0.1.0"
-
 __all__ = [
-    "AdapterService",
-    "EventSender",
-    "MAGIC_COOKIE_KEY",
-    "MAGIC_COOKIE_VALUE",
-    "PROTOCOL_VERSION",
-    "SDK_VERSION",
-    "SimpleAdapterConfig",
-    "is_plugin_invocation",
     "serve",
-    "serve_adapter",
-    "start_server",
-    "validate_and_exit_on_failure",
-    "validate_handshake",
+    "serve_remote",
+    "ServeConfig",
+    "RemoteIdentity",
+    "ServeRemoteOptions",
+    "Service",
+    "pydantic_to_schema",
+    "dict_to_schema_proto",
+    "Helpers",
+    "LogSender",
+    "OutcomeValidator",
+    "PermissionCorrelator",
+    "SecretsHelper",
+    "SessionStore",
+    "TimestampHelper",
+    "library_mode",
+    "run_in_process",
 ]

@@ -1,56 +1,30 @@
-.PHONY: all test proto build build-greeter build-openai package package-greeter package-openai clean help
-
-ADAPTER_NAME ?= greeter
-PYTHON := bash -c 'export PATH="$$HOME/.local/bin:$$PATH" && cd /home/dave/Projects/astrocyte-python-adapter-sdk && uv run python'
-
-all: test
-
-proto:
-	bash -c 'export PATH="$$HOME/.local/bin:$$PATH" && cd /home/dave/Projects/astrocyte-python-adapter-sdk && uv run python -m grpc_tools.protoc \
-	  --proto_path=/home/dave/Projects/criteria/proto \
-	  --python_out=src \
-	  --grpc_python_out=src \
-	  criteria/v1/adapter_plugin.proto criteria/v1/events.proto criteria/v1/criteria.proto criteria/v1/server.proto'
-
-test:
-	bash -c 'export PATH="$$HOME/.local/bin:$$PATH" && cd /home/dave/Projects/astrocyte-python-adapter-sdk && uv run pytest tests/ -v'
-
-build:
-	bash -c 'export PATH="$$HOME/.local/bin:$$PATH" && cd /home/dave/Projects/astrocyte-python-adapter-sdk && uv run python -m nuitka \
-	  --onefile --standalone --python-flag=-OO \
-	  --output-filename=criteria-adapter-$(ADAPTER_NAME) \
-	  examples/$(ADAPTER_NAME)/main.py'
-
-build-greeter:
-	$(MAKE) ADAPTER_NAME=greeter build
-
-build-openai:
-	$(MAKE) ADAPTER_NAME=openai build
-
-package:
-	bash -c 'export PATH="$$HOME/.local/bin:$$PATH" && cd /home/dave/Projects/astrocyte-python-adapter-sdk && uv build'
-
-package-greeter:
-	$(MAKE) ADAPTER_NAME=greeter build
-	@echo "Packaging criteria-adapter-greeter as OCI artifact..."
-	@echo "Use oras push to distribute the binary."
-
-package-openai:
-	$(MAKE) ADAPTER_NAME=openai build
-	@echo "Packaging criteria-adapter-openai as OCI artifact..."
-	@echo "Use oras push to distribute the binary."
-
-clean:
-	rm -rf build/ dist/ *.egg-info .pytest_cache
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+.PHONY: help test proto build-binaries
 
 help:
 	@echo "Available targets:"
-	@echo "  make proto          - Regenerate Python protobuf bindings"
-	@echo "  make test           - Run pytest suite"
-	@echo "  make build          - Build adapter binary with Nuitka (default: greeter)"
-	@echo "  make build-greeter  - Build greeter example"
-	@echo "  make build-openai   - Build openai example"
-	@echo "  make package        - Build Python wheel"
-	@echo "  make clean          - Remove build artifacts"
+	@echo "  test          - Run pytest suite"
+	@echo "  proto         - Regenerate Python bindings from vendored .proto files"
+	@echo "  build-binaries - Build Nuitka onefile binaries (requires nuitka)"
+
+test:
+	uv run pytest -v
+
+proto:
+	./scripts/generate_proto.sh
+
+# Build matrix: linux-x64, linux-arm64, darwin-arm64, windows-x64 (future-ready)
+# Requires: pip install nuitka
+build-binaries:
+	@echo "Building Nuitka onefile binaries..."
+	mkdir -p dist
+	# linux-x64 (native on Linux x86_64)
+	python -m nuitka --standalone --onefile \
+		--output-filename=criteria-adapter-sdk-linux-x64 \
+		--output-dir=dist \
+		src/criteria_adapter_sdk/__main__.py
+	# linux-arm64 (cross-compilation or run on arm64 host)
+	@echo "linux-arm64: build on an arm64 host or use cross-compilation flags"
+	# darwin-arm64 (requires macOS arm64 host)
+	@echo "darwin-arm64: build on an Apple Silicon macOS host"
+	# windows-x64 (future-ready; requires Windows host or MinGW cross toolchain)
+	@echo "windows-x64: future-ready target (requires Windows host or cross toolchain)"
