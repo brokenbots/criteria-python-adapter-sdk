@@ -4,6 +4,7 @@ import socket
 import ssl
 import tempfile
 import threading
+import time
 from concurrent import futures
 from dataclasses import dataclass
 from typing import Optional
@@ -27,6 +28,14 @@ class ServeRemoteOptions:
     accept_token: Optional[str] = None
     tls: Optional[ssl.SSLContext] = None
     socket_path: Optional[str] = None
+    # When True, redial the host with exponential backoff after the connection
+    # drops, instead of returning. Matches the TypeScript and Go SDKs' opt-in
+    # phone-home reconnect behavior. Default False: serve one connection, return.
+    reconnect: bool = False
+    # First backoff after a dropped connection when reconnect is True (seconds).
+    initial_delay: float = 1.0
+    # Cap on the exponential backoff when reconnect is True (seconds).
+    max_delay: float = 30.0
 
 
 class _AdapterServicer(adapter_pb2_grpc.AdapterServiceServicer):
@@ -162,6 +171,32 @@ def _bridge_sockets(a: socket.socket, b: socket.socket) -> None:
     t2.join()
 
 
+def _connect_and_bridge(opts: ServeRemoteOptions, socket_path: str) -> None:
+    """Dial the host, send the handshake, and bridge to the local gRPC socket.
+
+    Owns only the per-connection sockets; the caller owns the gRPC server.
+    """
+    conn = _dial_remote(opts.host, opts.tls)
+    try:
+        _send_handshake(conn, opts.identity, opts.accept_token)
+    except Exception as e:
+        conn.close()
+        raise RuntimeError(f"serveRemote: handshake failed: {e}") from e
+
+    local = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        local.connect(socket_path)
+    except Exception as e:
+        conn.close()
+        raise RuntimeError(f"serveRemote: connect to internal socket failed: {e}") from e
+
+    try:
+        _bridge_sockets(conn, local)
+    finally:
+        conn.close()
+        local.close()
+
+
 def serve_remote(service: Service, opts: ServeRemoteOptions) -> None:
     if not opts.host:
         raise ValueError("serveRemote: host is required")
@@ -176,25 +211,19 @@ def serve_remote(service: Service, opts: ServeRemoteOptions) -> None:
     server.add_insecure_port(f"unix://{socket_path}")
     server.start()
 
-    conn = _dial_remote(opts.host, opts.tls)
     try:
-        _send_handshake(conn, opts.identity, opts.accept_token)
-    except Exception as e:
-        conn.close()
-        server.stop(0)
-        raise RuntimeError(f"serveRemote: handshake failed: {e}") from e
+        if not opts.reconnect:
+            _connect_and_bridge(opts, socket_path)
+            return
 
-    local = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        local.connect(socket_path)
-    except Exception as e:
-        conn.close()
-        server.stop(0)
-        raise RuntimeError(f"serveRemote: connect to internal socket failed: {e}") from e
-
-    try:
-        _bridge_sockets(conn, local)
+        delay = opts.initial_delay
+        while True:
+            try:
+                _connect_and_bridge(opts, socket_path)
+                delay = opts.initial_delay  # clean disconnect: reset backoff
+            except (OSError, RuntimeError):
+                pass  # dial/handshake failure: retry after backoff
+            time.sleep(delay)
+            delay = min(delay * 2, opts.max_delay)
     finally:
-        conn.close()
-        local.close()
         server.stop(0)
