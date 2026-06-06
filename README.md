@@ -55,6 +55,9 @@ opts = ServeRemoteOptions(
     host="criteria.example.com:7778",
     identity=identity,
     accept_token=os.environ.get("CRITERIA_REMOTE_TOKEN"),
+    # Redial with exponential backoff if the host connection drops (default
+    # False: serve one connection and return). Mirrors the TS/Go SDKs.
+    reconnect=True,
 )
 
 serve_remote(my_service, opts)

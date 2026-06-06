@@ -205,3 +205,62 @@ def test_serve_remote_rejects_empty_host():
     svc = _FakeService(RemoteIdentity(name="a", version="1", digest="sha256:x"))
     with pytest.raises(ValueError, match="host is required"):
         serve_remote(svc, ServeRemoteOptions(host="", identity=svc.identity))
+
+
+def test_serve_remote_reconnects_after_disconnect():
+    host_sock = _pick_sock("host-reconnect")
+    adapter_sock = _pick_sock("adapter-reconnect")
+
+    host_server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    host_server.bind(host_sock)
+    host_server.listen(4)
+
+    connections = 0
+
+    def accept_loop():
+        nonlocal connections
+        while connections < 2:
+            try:
+                conn, _ = host_server.accept()
+            except OSError:
+                return
+            connections += 1
+            try:
+                _readline(conn)  # consume handshake
+            except (OSError, ConnectionError):
+                pass
+            conn.close()  # force a disconnect to trigger a reconnect
+
+    accept_thread = Thread(target=accept_loop, daemon=True)
+    accept_thread.start()
+
+    identity = RemoteIdentity(name="reconnecter", version="1.0.0", digest="sha256:abc")
+    svc = _FakeService(identity)
+    adapter_thread = Thread(
+        target=serve_remote,
+        args=(
+            svc,
+            ServeRemoteOptions(
+                host=host_sock,
+                identity=identity,
+                socket_path=adapter_sock,
+                reconnect=True,
+                initial_delay=0.01,
+                max_delay=0.02,
+            ),
+        ),
+        daemon=True,
+    )
+    adapter_thread.start()
+
+    accept_thread.join(timeout=5)
+    assert connections >= 2, "adapter did not reconnect after the host dropped it"
+
+    # serve_remote loops forever in reconnect mode; the daemon thread is
+    # abandoned on test exit. Close the listener to unblock any pending dial.
+    host_server.close()
+    for p in (host_sock, adapter_sock):
+        try:
+            os.unlink(p)
+        except FileNotFoundError:
+            pass
