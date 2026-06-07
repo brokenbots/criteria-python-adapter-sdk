@@ -28,3 +28,8 @@ build-binaries:
 	@echo "darwin-arm64: build on an Apple Silicon macOS host"
 	# windows-x64 (future-ready; requires Windows host or MinGW cross toolchain)
 	@echo "windows-x64: future-ready target (requires Windows host or cross toolchain)"
+
+# --- Security (WS49) ----------------------------------------------------------
+.PHONY: vuln-scan
+vuln-scan: ## Scan for known vulnerabilities (osv-scanner; reads uv.lock). Requires osv-scanner on PATH.
+	osv-scanner scan source --config=osv-scanner.toml --lockfile=uv.lock
