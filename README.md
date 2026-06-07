@@ -170,3 +170,10 @@ docker build -f examples/docker/Dockerfile -t my-adapter .
 ### Systemd
 
 See `examples/systemd/criteria-adapter.service`.
+
+## Security & dependencies
+
+See [SECURITY.md](SECURITY.md) and [docs/dependency-policy.md](docs/dependency-policy.md).
+CI runs a **blocking** osv-scanner gate (reads `uv.lock`) plus a non-blocking
+`uv pip list --outdated` report. Reproduce the gate locally with `make vuln-scan`
+(requires `osv-scanner` on PATH).
